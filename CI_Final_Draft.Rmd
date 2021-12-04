@@ -27,12 +27,23 @@ library(dplyr)
     border-bottom: 5px solid #eee;
 }
 ```
+$$
+lnQ_{ijkt} = \alpha_j + \delta_{kt}+ \sum_{l=-4}^{25}\alpha_{t-l}^{good}R_{it-l}^{good}+\sum_{l=-4}^{25}\alpha_{t-l}R_{it-l}+\sum_{l=-4}^{25}\alpha_{t-l}^{bad}R_{it-l}^{bad}+\sum_{l=-4}^{25}\gamma_{t-l}ADVERT_{it-l}+\eta_{ijkt}
+$$
 
-j = price*week combination
-k = Segment
+alpha = Fixed Effect of Product Number * Price * Vintage 
+delta = Fixed effect of time trends in sales (period-color-price segment-package)
+
+i = Wine Product Number
+j = Price*week combination
+k = Product Segment
 t = Week
-alpha = Fixed Effect of Wine * Vintage * Price
-delta = Fixed effect of time trends in sales (week*segment)
+l = lead number
+
+$$
+lnQ_{ijkt} = \alpha_j + \delta_{kt}+ \sum_{l=-4}^{25}\alpha_{t-l}^mR_{it-l}^m+\sum_{l=0}^{10}D_g\alpha_{t-l}^mR_{it-l}^m+\sum_{l=-4}^{25}\gamma_{t-l}ADVERT_{it-l}+\eta_{ijkt}
+$$
+m = good review, bad review, review
 
 ```{r}
 data <- read.csv("wine_data.csv")
