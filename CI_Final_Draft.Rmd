@@ -5,33 +5,201 @@ date: "12/2/2021"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-
 setwd('~/Desktop/Ivey/CI/Project/')
 
 library(tidyverse)
 library(fixest)
 ```
-hi I am making some changes
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+```
+
+```{css style settings, echo = FALSE}
+.text-box {
+    padding: 10px 20px;
+    margin: 0 0 20px;
+    font-size: 14px;
+    border-left: 5px solid #eee;
+    border-right: 5px solid #eee;
+    border-top: 5px solid #eee;
+    border-bottom: 5px solid #eee;
+}
+```
+
+j = price*week combination
+k = Segment
+t = Week
+alpha = Fixed Effect of Wine * Vintage * Price
+delta = Fixed effect of time trends in sales (week*segment)
 
 ```{r}
+data <- read.csv("wine_data.csv")
+
+data$date <- as.Date(data$date,format='%d %b %y')
+
+#Changing variable names to make for easier references throughout the file
 data <- data %>%
-  rename(i = artikpr, 
-         t = time_segm_price, 
-         Y = llitre, 
-         D = rev_all,
-         D_good = rev_all_hi,
-         D_bad = rev_all_lo,
-         D_aom = rev_ex_hi,
-         D_aom2 = rev_ex_lo,
-         D_naom = rev_nyaom_hi,
-         D_naom2 = rev_nyaom_lo,
-         wine = artikelnr, 
-         brand = artikelid,
-         advert = ma_split)%>%
-  mutate(D_adv = ifelse(advert>0,1,0))
+  rename(i = artikpr, #product number-price-vintage combination
+         t = time_segm_price, #period-color-price segment-package indicator
+         Y = llitre, #weekly sale in log litre
+         D = rev_all, #indicator of wine being reviewed
+         D_good = rev_all_hi, #Indicator of the wine receiving a good review (all
+         D_bad = rev_all_lo, #Indicator of the wine receiving a bad review (all
+         D_aom = rev_ex_hi, #Indicator of the wine receiving a good review in AoM 
+         D_aom2 = rev_ex_lo, #Indicator of the wine receiving a bad review in AoM 
+         D_naom = rev_nyaom_hi, #Indicator of good reviews not in AoM yearly special
+         D_naom2 = rev_nyaom_lo, #Indicator of bad reviews not in AoM yearly special 
+         wine = artikelnr,  #ID number of wine
+         brand = artikelid, #ID number of Brand
+         advert = ma_split,  #AD expenditure
+     
+         tab = rev_eve #Received review in tabloid
+         )
+#change to factor
+data$i = as.factor(data$i)
+data$t = as.factor(data$t)
+
+data$advert[is.na(data$advert)] = 0
+
+data <- data %>% 
+  mutate(Price_hm = ifelse(price_segm == 'h' | price_segm == 'm', 1,0), #if price is high or medium segment
+         D_adv = ifelse(advert > 0,1,0), #has any advertisement
+         #D_neu = ifelse(D ==1 & D_good == 0 & D_bad == 0,1,0 ) #Received neutral review
+         ) 
+
+new_world <- c('Argentina', 'Australien', 'Chile', 'Nya Zeeland', 'Sydafrika', 'Uruguay', 'USA')
+
+data <- data %>%
+  mutate( New_world = ifelse(country %in% new_world, 1, 0), #if the wine is from new world
+          New = ifelse(old == 1, 0, 1), #if the wine is distributed for less than 2 years
+          Vin = ifelse(vintage == 'n',0,1), #if the wine is vintage
+          ad_legal = ifelse(date > '2003-05-15', 1, 0) #if having legal advertisement
+          ) 
+#!!! high quality variation is not created 
+quality_data <- data %>%
+  group_by(year, region) %>%
+  summarise(stdDev = sd(v10_aomm, na.rm = TRUE)) %>%
+  na.omit() %>%
+  arrange(year, desc(stdDev)) %>%
+  filter(stdDev > quantile(stdDev, .9)) %>%
+  mutate(high_quality_indicator = 1) %>%
+  ungroup()
+
+data <- left_join(data, quality_data, c('year', 'region')) 
+
+data$high_quality_indicator[is.na(data$high_quality_indicator)] = 0
+# Filter out data from wines in the lower distribution segments, only want the top two distribution segments (77.4% of volume, 420 and 325 stores respectively)
 fdata <- data %>%
   filter(dist %in% c('5','6'))
+
 head(fdata)
 ```
+
+```{r}
+rev_data <- fdata
+#Creating Leads and Lags for all reviews
+for (k in 1:4) {
+    column_name <- paste("dlead_",k,sep='')
+    rev_data <- rev_data %>%
+      group_by(wine) %>%
+      mutate(!!column_name := dplyr::lead(D,n=k)) %>%
+      ungroup()}
+
+for (k in 1:25) {
+    column_name <- paste("dlag_",k,sep='')
+    rev_data <- rev_data %>%
+      group_by(wine) %>%
+      mutate(!!column_name := dplyr::lag(D,n=k)) %>%
+      ungroup()}
+
+#Crating Leads and Lags for Good Reviews 
+for (k in 1:4) {
+    column_name <- paste("good_dlead_",k,sep='')
+    rev_data <- rev_data %>%
+      group_by(wine) %>%
+      mutate(!!column_name := dplyr::lead(D_good,n=k)) %>%
+      ungroup()}
+for (k in 1:25) {
+    column_name <- paste("good_dlag_",k,sep='')
+    rev_data <- rev_data %>%
+      group_by(wine) %>%
+      mutate(!!column_name := dplyr::lag(D_good,n=k)) %>%
+      ungroup()}
+
+#Creating Leads and Lags for Bad Reviews 
+for (k in 1:4) {
+    column_name <- paste("bad_dlead_",k,sep='')
+    rev_data <- rev_data %>%
+      group_by(wine) %>%
+      mutate(!!column_name := dplyr::lead(D_bad,n=k)) %>%
+      ungroup()}
+
+for (k in 1:25) {
+    column_name <- paste("bad_dlag_",k,sep='')
+    rev_data <- rev_data %>%
+      group_by(wine) %>%
+      mutate(!!column_name := dplyr::lag(D_bad,n=k)) %>%
+      ungroup()}    
+
+#Creating Leads and Lags for Advertising 
+for (k in 1:4) {
+    column_name <- paste("adv_dlead_",k,sep='')
+    rev_data <- rev_data %>%
+      group_by(wine) %>%
+      mutate(!!column_name := dplyr::lead(advert,n=k)) %>%
+      ungroup()}
+for (k in 1:25) {
+    column_name <- paste("adv_dlag_",k,sep='')
+    rev_data <- rev_data %>%
+      group_by(wine) %>%
+      mutate(!!column_name := dplyr::lag(advert,n=k)) %>%
+      ungroup()}
+```
+
+#Fe ALL
+```{r}
+library(lfe)
+
+fe_all <- felm(Y ~ dlead_4+dlead_3+dlead_2+dlead_1+D+dlag_1+dlag_2+dlag_3+dlag_4+dlag_5+dlag_6+dlag_7+dlag_8+dlag_9+dlag_10+dlag_11+dlag_12+dlag_13+dlag_14+dlag_15+dlag_16+dlag_17+dlag_18+dlag_19+dlag_20+dlag_21+dlag_22+dlag_23+dlag_24+dlag_25+ 
+             good_dlead_4+good_dlead_3+good_dlead_2+good_dlead_1+D_good+good_dlag_1+good_dlag_2+good_dlag_3+good_dlag_4+good_dlag_5+good_dlag_6+good_dlag_7+good_dlag_8+good_dlag_9+good_dlag_10+good_dlag_11+good_dlag_12+good_dlag_13+good_dlag_14+good_dlag_15+good_dlag_16+good_dlag_17+good_dlag_18+good_dlag_19+good_dlag_20+good_dlag_21+good_dlag_22+good_dlag_23+good_dlag_24+good_dlag_25+
+             bad_dlead_4+bad_dlead_3+bad_dlead_2+bad_dlead_1+D_bad+bad_dlag_1+bad_dlag_2+bad_dlag_3+bad_dlag_4+bad_dlag_5+bad_dlag_6+bad_dlag_7+bad_dlag_8+bad_dlag_9+bad_dlag_10+bad_dlag_11+bad_dlag_12+bad_dlag_13+bad_dlag_14+bad_dlag_15+bad_dlag_16+bad_dlag_17+bad_dlag_18+bad_dlag_19+bad_dlag_20+bad_dlag_21+bad_dlag_22+bad_dlag_23+bad_dlag_24+bad_dlag_25+
+             adv_dlead_4+adv_dlead_3+adv_dlead_2+adv_dlead_1+advert+adv_dlag_1+adv_dlag_2+adv_dlag_3+adv_dlag_4+adv_dlag_5+adv_dlag_6+adv_dlag_7+adv_dlag_8+adv_dlag_9+adv_dlag_10+adv_dlag_11+adv_dlag_12+adv_dlag_13+adv_dlag_14+adv_dlag_15+adv_dlag_16+adv_dlag_17+adv_dlag_18+adv_dlag_19+adv_dlag_20+adv_dlag_21+adv_dlag_22+adv_dlag_23+adv_dlag_24+adv_dlag_25 + 
+#price                
+             Price_hm*D + Price_hm*dlag_1 + Price_hm*dlag_2 + Price_hm*dlag_3 +Price_hm*dlag_4 + Price_hm*dlag_5 + Price_hm*dlag_6 + Price_hm*dlag_7 + Price_hm*dlag_8 + Price_hm*dlag_9 + Price_hm*dlag_10 + 
+             Price_hm*D_good + Price_hm*good_dlag_1 + Price_hm*good_dlag_2 + Price_hm*good_dlag_3 +Price_hm*good_dlag_4 + Price_hm*good_dlag_5 + Price_hm*good_dlag_6 + Price_hm*good_dlag_7 + Price_hm*good_dlag_8 + Price_hm*good_dlag_9 + Price_hm*good_dlag_10 + 
+             Price_hm*D_bad + Price_hm*bad_dlag_1 + Price_hm*bad_dlag_2 + Price_hm*bad_dlag_3 +Price_hm*bad_dlag_4 + Price_hm*bad_dlag_5 + Price_hm*bad_dlag_6 + Price_hm*bad_dlag_7 + Price_hm*bad_dlag_8 + Price_hm*bad_dlag_9 + Price_hm*bad_dlag_10 +
+#tabloid               
+             tab*D + tab*dlag_1 + tab*dlag_2 + tab*dlag_3 +tab*dlag_4 + tab*dlag_5 + tab*dlag_6 + tab*dlag_7 + tab*dlag_8 + tab*dlag_9 + tab*dlag_10 + 
+             tab*D_good + tab*good_dlag_1 + tab*good_dlag_2 + tab*good_dlag_3 +tab*good_dlag_4 + tab*good_dlag_5 + tab*good_dlag_6 + tab*good_dlag_7 + tab*good_dlag_8 + tab*good_dlag_9 + tab*good_dlag_10 + 
+             tab*D_bad + tab*bad_dlag_1 + tab*bad_dlag_2 + tab*bad_dlag_3 +tab*bad_dlag_4 + tab*bad_dlag_5 + tab*bad_dlag_6 + tab*bad_dlag_7 + tab*bad_dlag_8 + tab*bad_dlag_9 + tab*bad_dlag_10  +
+#new world
+             New_world*D + New_world*dlag_1 + New_world*dlag_2 + New_world*dlag_3 +New_world*dlag_4 + New_world*dlag_5 + New_world*dlag_6 + New_world*dlag_7 + New_world*dlag_8 + New_world*dlag_9 + New_world*dlag_10 + 
+             New_world*D_good + New_world*good_dlag_1 + New_world*good_dlag_2 + New_world*good_dlag_3 +New_world*good_dlag_4 + New_world*good_dlag_5 + New_world*good_dlag_6 + New_world*good_dlag_7 + New_world*good_dlag_8 + New_world*good_dlag_9 + New_world*good_dlag_10 + 
+             New_world*D_bad + New_world*bad_dlag_1 + New_world*bad_dlag_2 + New_world*bad_dlag_3 +New_world*bad_dlag_4 + New_world*bad_dlag_5 + New_world*bad_dlag_6 + New_world*bad_dlag_7 + New_world*bad_dlag_8 + New_world*bad_dlag_9 + New_world*bad_dlag_10 +
+#advertisting               
+             D_adv*D + D_adv*dlag_1 + D_adv*dlag_2 + D_adv*dlag_3 +D_adv*dlag_4 + D_adv*dlag_5 + D_adv*dlag_6 + D_adv*dlag_7 + D_adv*dlag_8 + D_adv*dlag_9 + D_adv*dlag_10 + 
+             D_adv*D_good + D_adv*good_dlag_1 + D_adv*good_dlag_2 + D_adv*good_dlag_3 +D_adv*good_dlag_4 + D_adv*good_dlag_5 + D_adv*good_dlag_6 + D_adv*good_dlag_7 + D_adv*good_dlag_8 + D_adv*good_dlag_9 + D_adv*good_dlag_10 + 
+             D_adv*D_bad + D_adv*bad_dlag_1 + D_adv*bad_dlag_2 + D_adv*bad_dlag_3 +D_adv*bad_dlag_4 + D_adv*bad_dlag_5 + D_adv*bad_dlag_6 + D_adv*bad_dlag_7 + D_adv*bad_dlag_8 + D_adv*bad_dlag_9 + D_adv*bad_dlag_10 +
+#legal advertising          
+            ad_legal*D + ad_legal*dlag_1 + ad_legal*dlag_2 + ad_legal*dlag_3 +ad_legal*dlag_4 + ad_legal*dlag_5 + ad_legal*dlag_6 + ad_legal*dlag_7 + ad_legal*dlag_8 + ad_legal*dlag_9 + ad_legal*dlag_10 + 
+             ad_legal*D_good + ad_legal*good_dlag_1 + ad_legal*good_dlag_2 + ad_legal*good_dlag_3 +ad_legal*good_dlag_4 + ad_legal*good_dlag_5 + ad_legal*good_dlag_6 + ad_legal*good_dlag_7 + ad_legal*good_dlag_8 + ad_legal*good_dlag_9 + ad_legal*good_dlag_10 + 
+             ad_legal*D_bad + ad_legal*bad_dlag_1 + ad_legal*bad_dlag_2 + ad_legal*bad_dlag_3 +ad_legal*bad_dlag_4 + ad_legal*bad_dlag_5 + ad_legal*bad_dlag_6 + ad_legal*bad_dlag_7 + ad_legal*bad_dlag_8 + ad_legal*bad_dlag_9 + ad_legal*bad_dlag_10 +
+#New
+            New*D + New*dlag_1 + New*dlag_2 + New*dlag_3 +New*dlag_4 + New*dlag_5 + New*dlag_6 + New*dlag_7 + New*dlag_8 + New*dlag_9 + New*dlag_10 + 
+            New*D_good + New*good_dlag_1 + New*good_dlag_2 + New*good_dlag_3 +New*good_dlag_4 + New*good_dlag_5 + New*good_dlag_6 + New*good_dlag_7 + New*good_dlag_8 + New*good_dlag_9 + New*good_dlag_10 + 
+             New*D_bad + New*bad_dlag_1 + New*bad_dlag_2 + New*bad_dlag_3 +New*bad_dlag_4 + New*bad_dlag_5 + New*bad_dlag_6 + New*bad_dlag_7 + New*bad_dlag_8 + New*bad_dlag_9 + New*bad_dlag_10 +
+#Vintage
+            Vin*D + Vin*dlag_1 + Vin*dlag_2 + Vin*dlag_3 +Vin*dlag_4 + Vin*dlag_5 + Vin*dlag_6 + Vin*dlag_7 + Vin*dlag_8 + Vin*dlag_9 + Vin*dlag_10 + 
+            Vin*D_good + Vin*good_dlag_1 + Vin*good_dlag_2 + Vin*good_dlag_3 +Vin*good_dlag_4 + Vin*good_dlag_5 + Vin*good_dlag_6 + Vin*good_dlag_7 + Vin*good_dlag_8 + Vin*good_dlag_9 + Vin*good_dlag_10 + 
+             Vin*D_bad + Vin*bad_dlag_1 + Vin*bad_dlag_2 + Vin*bad_dlag_3 +Vin*bad_dlag_4 + Vin*bad_dlag_5 + Vin*bad_dlag_6 + Vin*bad_dlag_7 + Vin*bad_dlag_8 + Vin*bad_dlag_9 + Vin*bad_dlag_10 +
+#High Quality  
+            high_quality_indicator*D + high_quality_indicator*dlag_1 + high_quality_indicator*dlag_2 + high_quality_indicator*dlag_3 +high_quality_indicator*dlag_4 + high_quality_indicator*dlag_5 + high_quality_indicator*dlag_6 + high_quality_indicator*dlag_7 + high_quality_indicator*dlag_8 + high_quality_indicator*dlag_9 + high_quality_indicator*dlag_10 + 
+            high_quality_indicator*D_good + high_quality_indicator*good_dlag_1 + high_quality_indicator*good_dlag_2 + high_quality_indicator*good_dlag_3 +high_quality_indicator*good_dlag_4 + high_quality_indicator*good_dlag_5 + high_quality_indicator*good_dlag_6 + high_quality_indicator*good_dlag_7 + high_quality_indicator*good_dlag_8 + high_quality_indicator*good_dlag_9 + high_quality_indicator*good_dlag_10 + 
+             high_quality_indicator*D_bad + high_quality_indicator*bad_dlag_1 + high_quality_indicator*bad_dlag_2 + high_quality_indicator*bad_dlag_3 +high_quality_indicator*bad_dlag_4 + high_quality_indicator*bad_dlag_5 + high_quality_indicator*bad_dlag_6 + high_quality_indicator*bad_dlag_7 + high_quality_indicator*bad_dlag_8 + high_quality_indicator*bad_dlag_9 + high_quality_indicator*bad_dlag_10 
+   | i + t | 0 | brand, rev_data)
+```
+
+
+
