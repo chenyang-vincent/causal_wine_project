@@ -1,19 +1,13 @@
 ---
-title: 'CI Final Project: Wine'
-author: "Vincent Wang"
+title: "Casual Inference Final Project"
+author: "Linke Bai, Max Zhang, Vincent Wang"
 date: "12/2/2021"
 output: html_document
 ---
 
-setwd('~/Desktop/Ivey/CI/Project/')
-
-library(tidyverse)
-library(fixest)
-```
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(dplyr)
 ```
 
 ```{css style settings, echo = FALSE}
@@ -27,189 +21,360 @@ library(dplyr)
     border-bottom: 5px solid #eee;
 }
 ```
+# Do Expert Reviews Affect the Demand for Wine?
+
+## Introduction
+
+### Description of the paper
+
+The paper that our group selected for this assignment examines how expert reviews influence the demand for wine in Sweden. The researchers used Dynamic Panel Regression to estimate the relationship between expert review and wine sales by introducing lead and lag terms to linear regression model. To confirm whether the effect of reviews varies across different types of wine, the researchers also included a series of interaction terms in the original model to allow review indicators to interact with categories of interest.
+
+### Data 
+
+Weekly sales data on wine is Sweden from Jan 2002 to the first two weeks of 2007 is analyzed by author. The data covers all red , white, and sparkling win sold in 750 ml bottles or in 3 liter packages, which account for more than 96% of the retail market. A wine is defined according to the producer, grape type, container size, coupled with special indications on the label. 10 segments were defined to accommodate the fixed effect of different combination of wine, vintage and price. There are 4 segments of red wine, 4 segments of white wine, and 2 segments of sparkling wine. 
+
+All wines in Sweden is distributed at different levels, while the author only focused on wines that are distributed in more than 375 stores, which account for 77.4% of the market volume. The advertising expenditure per wine per week is also analyzed. 
+
+The review data is collected from 6 major print media sources, which are considered the most influential wine reviews in Sweden. All reviews provides a numerical grade that sets quality in relation to price, which is converted to a 0-10 scale in the data. There are situations when a wine receives conflicting reviews from different sources, the grades from all reviews are positively correlated with each other. 
+
+### Description of the Graph to be Replicated
+
+Our group decided to replicate the summary graph of the first baseline model in the empirical models. The graph consists of 6 individual plots that shows the estimated coefficients from 3 separate models on the sales of wine: model with all review data, model with AOM review data, and model with non-AOM review data. The first 4 four plots are based on the model with all review data and separately focus on the effect of review, good review, bad review, and advertisement expenditure. The 5th plot focus on the effect of good review in the model with AOM review only, while the last plot shows the effect of good review in the model with non-AOM review only. 
+
+The target graph summarizes the key results of the baseline model, and help set up an initial understanding on the relationship between expert reviews and wine sales. The further analysis and models that investigate the interaction terms in the later contents are all based on and derived from this. 
+
+#### Empirical Approach 
 $$
 lnQ_{ijkt} = \alpha_j + \delta_{kt}+ \sum_{l=-4}^{25}\alpha_{t-l}^{good}R_{it-l}^{good}+\sum_{l=-4}^{25}\alpha_{t-l}R_{it-l}+\sum_{l=-4}^{25}\alpha_{t-l}^{bad}R_{it-l}^{bad}+\sum_{l=-4}^{25}\gamma_{t-l}ADVERT_{it-l}+\eta_{ijkt}
 $$
 
-alpha = Fixed Effect of Product Number * Price * Vintage 
-delta = Fixed effect of time trends in sales (period-color-price segment-package)
+- i:  Wine Product Number
+- j: Price*week combination
+- k: Product Segment
+- t: Week
+- R: dummy, if the wine has received any reviews
+- $R^{good}$: dummy,if the wine has received review grades greater than 8
+- $R^{bad}$: dummy,if the wine has received review grades less than 4
 
-i = Wine Product Number
-j = Price*week combination
-k = Product Segment
-t = Week
-l = lead number
+- The dependent variable: Natural log of liters sold of wine i, with vintage and price combination j, sold in segment k during week t
 
-$$
-lnQ_{ijkt} = \alpha_j + \delta_{kt}+ \sum_{l=-4}^{25}\alpha_{t-l}^mR_{it-l}^m+\sum_{l=0}^{10}D_g\alpha_{t-l}^mR_{it-l}^m+\sum_{l=-4}^{25}\gamma_{t-l}ADVERT_{it-l}+\eta_{ijkt}
-$$
-m = good review, bad review, review
+- Two fixed effects are involved: 
+1.$\alpha_j:$Fixed Effect of Product Number * Price * Vintage. 
+2.$\delta_{kt}$: Fixed effect of time trends in sales (period-color-price segment-package).
 
-```{r}
+### Experiment Motivation
+
+
+
+
+## Replication
+#### Read and Clean Data
+```{r, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(fixest)
+library(tidyverse)
+library(broom)
+
 data <- read.csv("wine_data.csv")
-
 data$date <- as.Date(data$date,format='%d %b %y')
-
-#Changing variable names to make for easier references throughout the file
+#Change variable names to the same notation as the equation
 data <- data %>%
-  rename(i = artikpr, #product number-price-vintage combination
-         t = time_segm_price, #period-color-price segment-package indicator
-         Y = llitre, #weekly sale in log litre
-         D = rev_all, #indicator of wine being reviewed
-         D_good = rev_all_hi, #Indicator of the wine receiving a good review (all
-         D_bad = rev_all_lo, #Indicator of the wine receiving a bad review (all
-         D_aom = rev_ex_hi, #Indicator of the wine receiving a good review in AoM 
-         D_aom2 = rev_ex_lo, #Indicator of the wine receiving a bad review in AoM 
-         D_naom = rev_nyaom_hi, #Indicator of good reviews not in AoM yearly special
-         D_naom2 = rev_nyaom_lo, #Indicator of bad reviews not in AoM yearly special 
-         wine = artikelnr,  #ID number of wine
-         brand = artikelid, #ID number of Brand
+  rename(brand = artikelid, #ID number of Brand
+         i = artikelnr,  #ID number of wine
          advert = ma_split,  #AD expenditure
-     
-         tab = rev_eve #Received review in tabloid
+         j = artikpr, #product number-price-vintage combination
+         tk = time_segm_price, #period-color-price segment-package indicator
+         Q = llitre, #weekly sale in log litre
+         R = rev_all, #indicator of wine being reviewed
+         R_good = rev_all_hi, #Indicator of the wine receiving a good review (all
+         R_bad = rev_all_lo, #Indicator of the wine receiving a bad review (all
+         R_aom = rev_ex_hi, #Indicator of the wine receiving a good review in AoM 
+         R_aom2 = rev_ex_lo, #Indicator of the wine receiving a bad review in AoM 
+         R_naom = rev_nyaom_hi, #Indicator of good reviews not in AoM yearly special
+         R_naom2 = rev_nyaom_lo #Indicator of bad reviews not in AoM yearly special 
          )
+
 #change to factor
-data$i = as.factor(data$i)
-data$t = as.factor(data$t)
+data$j = as.factor(data$j)
+data$tk = as.factor(data$tk)
 
 data$advert[is.na(data$advert)] = 0
 
-data <- data %>% 
-  mutate(Price_hm = ifelse(price_segm == 'h' | price_segm == 'm', 1,0), #if price is high or medium segment
-         D_adv = ifelse(advert > 0,1,0), #has any advertisement
-         #D_neu = ifelse(D ==1 & D_good == 0 & D_bad == 0,1,0 ) #Received neutral review
-         ) 
-
-new_world <- c('Argentina', 'Australien', 'Chile', 'Nya Zeeland', 'Sydafrika', 'Uruguay', 'USA')
-
-data <- data %>%
-  mutate( New_world = ifelse(country %in% new_world, 1, 0), #if the wine is from new world
-          New = ifelse(old == 1, 0, 1), #if the wine is distributed for less than 2 years
-          Vin = ifelse(vintage == 'n',0,1), #if the wine is vintage
-          ad_legal = ifelse(date > '2003-05-15', 1, 0) #if having legal advertisement
-          ) 
-#!!! high quality variation is not created 
-quality_data <- data %>%
-  group_by(year, region) %>%
-  summarise(stdDev = sd(v10_aomm, na.rm = TRUE)) %>%
-  na.omit() %>%
-  arrange(year, desc(stdDev)) %>%
-  filter(stdDev > quantile(stdDev, .9)) %>%
-  mutate(high_quality_indicator = 1) %>%
-  ungroup()
-
-data <- left_join(data, quality_data, c('year', 'region')) 
-
-data$high_quality_indicator[is.na(data$high_quality_indicator)] = 0
-# Filter out data from wines in the lower distribution segments, only want the top two distribution segments (77.4% of volume, 420 and 325 stores respectively)
-fdata <- data %>%
+#Filter data based on distribution level
+dataset <- data %>%
   filter(dist %in% c('5','6'))
+```
 
-head(fdata)
+#### Build Estimation Models
+
+```{r, warning= FALSE}
+# Models with All Reviews
+fit_base <- feols(Q ~ l(R, -4:25)+l(R_good, -4:25) +l(R_bad, -4:25)+l(advert, -4:25) | j + tk, panel.id = ~ i + period, cluster = ~ brand, data = dataset)
+
+# Models with Reviews on AOM only
+fit_aom <- feols(Q ~ l(R_aom, -4:25)+l(R_aom2, -4:25) +l(advert, -4:25) | j + tk, panel.id = ~ i + period, cluster = ~ brand, data = dataset)
+
+#Models with reviews not on AOM only
+fit_naom <- feols(Q ~ l(R_naom, -4:25)+l(R_naom2, -4:25) +l(advert, -4:25) | j + tk, panel.id = ~ i + period, cluster = ~ brand, data = dataset)
+
+```
+
+#### Visualize the Coefficients
+
+```{r}
+par(mfrow = c(3,2))
+#Reviews in all review model
+coefplot(fit_base, keep =  'R[^_]|^R$', 
+         main = "Reviews",
+         xlab = "week",
+         ylab = "log liter")
+#Good reviews in all review model
+coefplot(fit_base, keep =  'R_good[^_]|^R_good$',
+         main = "Good Review",
+         xlab = "week",
+         ylab = "log liter")
+#Bad reviews in all review model
+coefplot(fit_base, keep = 'R_bad[^_]|^R_bad$',
+         main = "Bad Review",
+         xlab = "week",
+         ylab = "log liter")
+#Advertisement in all review model
+coefplot(fit_base, keep = 'advert[^_]|^advert$',
+         main = "Advertising expenditures",
+         xlab = "week",
+         ylab = "log liter")
+#Good review in AOM Review only model
+coefplot(fit_aom, keep = 'R_aom[^2]|^R_aom$',
+         main = "Good Review: AOM Yearly Test",
+         xlab = "week",
+         ylab = "log liter")
+#Good review in non-AOM review model
+coefplot(fit_naom, keep = 'R_naom[^2]|R_naom$',
+         main = "Good Review: Non-Aom yearly test",
+         xlab = "week",
+         ylab = "log liter")
+```
+
+### Replication Differences
+
+There are some small differences in the coefficients we got comparing to the paper as the raw data provided by the author is not identical to what he described in the paper. Specifically, the data provided by the author is missing the 1st month of data in 2017 which was mentioned in the paper. The author also mentioned there are 64,863 observations after initial cleaning stage while we have 76,379 observations after going through the same procedure. There are also some differences in the summary statistics regarding the number of red wines and sparking wines in the data. 
+
+Nevertheless, the replication result we created are very close to what the author achieved in the original paper. Despite the small numeric difference in some of the coefficients, it shows the same patterns and behaviors as in the paper. Overall, our results suggests a slightly greater effect of expert wine reviews on the log sales of wine. 
+
+### Experiment Motivation 
+
+#### Description
+
+Our group believed that there might be other confounders that the authors failed to take into consideration and wondered how those factors would affect the causal estimation.
+
+Based on our personal experience and understanding of the wine industry, we reckoned that if a particular type of wine is being served in a fine-dining restaurant, the sales-boosting impact of positive reviews would be magnified. Such hypothesis motivated us to simulate new data and see whether the proposed *fine-dining effect* would substantially influence the model estimation.
+
+
+#### Causal Model
+
+$$
+Q \sim \delta_i + \delta_t+ \sum_{l=-2}^{4}\delta_{t-l}R_{i,t-l}
+$$
+Q: log sales of the wine 
+j:
+t:
+R:
+
+#### Data Simulation
+
+```{r}
+r = c(0.005672567,0.006215906,0.014258187,0.022125058,0.016683916,0.011528443,0.009721088)
+rest = c(0.0015, 0.0015, 0.0015, 0.002, 0.002, 0.002, 0.002)
+
+simulate_data <- function(
+  N_units = 10,
+  T0 = 1, T1 = 100,
+  delta = r,
+  rrest = rest,
+  pi=0.03,gamma=0.05,sigma_U=0.01,sigma_Y=0.02
+){
+  N_periods <- T1 - T0 + 1
+  N_obs <- N_units*N_periods
+  
+  tibble(
+    i = rep(1:N_units,times=1,each=N_periods),
+    t = rep(T0:T1,times=N_units,each=1),
+  ) %>% 
+    
+    #unit FE
+  group_by(i) %>%
+  mutate(    
+    U_i = runif(1,0,1)
+  ) %>%
+      
+   #time period FE
+  group_by(t) %>%
+  mutate(    
+    U_t = gamma*t + rnorm(1,0,sigma_U)
+  ) %>%
+    
+  ungroup() %>%
+  
+  mutate(
+    R = rbinom(N_obs,1,pi),
+    Y0 = U_i + U_t + rnorm(N_obs,0,sigma_Y)
+  ) %>%
+    
+  group_by(i) %>%
+  mutate(
+    Y = Y0 + delta[1]*dplyr::lag(R,2) + delta[2]*dplyr::lag(R) + delta[3]*R + delta[4]*dplyr::lead(R) + delta[5]*dplyr::lead(R,2) + delta[6]*dplyr::lead(R,3) + delta[7]*dplyr::lead(R,4) + rrest[1]*dplyr::lag(R,2) + rrest[2]*dplyr::lag(R,1) + rrest[3]*dplyr::lag(R) + rrest[4]*dplyr::lead(R,2) + rrest[5]*dplyr::lead(R,2) + rrest[6]*dplyr::lead(R,3) + rrest[7]*dplyr::lead(R,4)
+  ) %>%
+    
+  ungroup()
+}
+
+head(
+  simulate_data()
+)
 ```
 
 ```{r}
-rev_data <- fdata
-#Creating Leads and Lags for all reviews
-for (k in 1:4) {
-    column_name <- paste("dlead_",k,sep='')
-    rev_data <- rev_data %>%
-      group_by(wine) %>%
-      mutate(!!column_name := dplyr::lead(D,n=k)) %>%
-      ungroup()}
-
-for (k in 1:25) {
-    column_name <- paste("dlag_",k,sep='')
-    rev_data <- rev_data %>%
-      group_by(wine) %>%
-      mutate(!!column_name := dplyr::lag(D,n=k)) %>%
-      ungroup()}
-
-#Crating Leads and Lags for Good Reviews 
-for (k in 1:4) {
-    column_name <- paste("good_dlead_",k,sep='')
-    rev_data <- rev_data %>%
-      group_by(wine) %>%
-      mutate(!!column_name := dplyr::lead(D_good,n=k)) %>%
-      ungroup()}
-for (k in 1:25) {
-    column_name <- paste("good_dlag_",k,sep='')
-    rev_data <- rev_data %>%
-      group_by(wine) %>%
-      mutate(!!column_name := dplyr::lag(D_good,n=k)) %>%
-      ungroup()}
-
-#Creating Leads and Lags for Bad Reviews 
-for (k in 1:4) {
-    column_name <- paste("bad_dlead_",k,sep='')
-    rev_data <- rev_data %>%
-      group_by(wine) %>%
-      mutate(!!column_name := dplyr::lead(D_bad,n=k)) %>%
-      ungroup()}
-
-for (k in 1:25) {
-    column_name <- paste("bad_dlag_",k,sep='')
-    rev_data <- rev_data %>%
-      group_by(wine) %>%
-      mutate(!!column_name := dplyr::lag(D_bad,n=k)) %>%
-      ungroup()}    
-
-#Creating Leads and Lags for Advertising 
-for (k in 1:4) {
-    column_name <- paste("adv_dlead_",k,sep='')
-    rev_data <- rev_data %>%
-      group_by(wine) %>%
-      mutate(!!column_name := dplyr::lead(advert,n=k)) %>%
-      ungroup()}
-for (k in 1:25) {
-    column_name <- paste("adv_dlag_",k,sep='')
-    rev_data <- rev_data %>%
-      group_by(wine) %>%
-      mutate(!!column_name := dplyr::lag(advert,n=k)) %>%
-      ungroup()}
+sim_data <- simulate_data()
+arrange(sim_data,i)
 ```
 
-#Fe ALL
-```{r}
-library(lfe)
 
-fe_all <- felm(Y ~ dlead_4+dlead_3+dlead_2+dlead_1+D+dlag_1+dlag_2+dlag_3+dlag_4+dlag_5+dlag_6+dlag_7+dlag_8+dlag_9+dlag_10+dlag_11+dlag_12+dlag_13+dlag_14+dlag_15+dlag_16+dlag_17+dlag_18+dlag_19+dlag_20+dlag_21+dlag_22+dlag_23+dlag_24+dlag_25+ 
-             good_dlead_4+good_dlead_3+good_dlead_2+good_dlead_1+D_good+good_dlag_1+good_dlag_2+good_dlag_3+good_dlag_4+good_dlag_5+good_dlag_6+good_dlag_7+good_dlag_8+good_dlag_9+good_dlag_10+good_dlag_11+good_dlag_12+good_dlag_13+good_dlag_14+good_dlag_15+good_dlag_16+good_dlag_17+good_dlag_18+good_dlag_19+good_dlag_20+good_dlag_21+good_dlag_22+good_dlag_23+good_dlag_24+good_dlag_25+
-             bad_dlead_4+bad_dlead_3+bad_dlead_2+bad_dlead_1+D_bad+bad_dlag_1+bad_dlag_2+bad_dlag_3+bad_dlag_4+bad_dlag_5+bad_dlag_6+bad_dlag_7+bad_dlag_8+bad_dlag_9+bad_dlag_10+bad_dlag_11+bad_dlag_12+bad_dlag_13+bad_dlag_14+bad_dlag_15+bad_dlag_16+bad_dlag_17+bad_dlag_18+bad_dlag_19+bad_dlag_20+bad_dlag_21+bad_dlag_22+bad_dlag_23+bad_dlag_24+bad_dlag_25+
-             adv_dlead_4+adv_dlead_3+adv_dlead_2+adv_dlead_1+advert+adv_dlag_1+adv_dlag_2+adv_dlag_3+adv_dlag_4+adv_dlag_5+adv_dlag_6+adv_dlag_7+adv_dlag_8+adv_dlag_9+adv_dlag_10+adv_dlag_11+adv_dlag_12+adv_dlag_13+adv_dlag_14+adv_dlag_15+adv_dlag_16+adv_dlag_17+adv_dlag_18+adv_dlag_19+adv_dlag_20+adv_dlag_21+adv_dlag_22+adv_dlag_23+adv_dlag_24+adv_dlag_25 + 
-#price                
-             Price_hm*D + Price_hm*dlag_1 + Price_hm*dlag_2 + Price_hm*dlag_3 +Price_hm*dlag_4 + Price_hm*dlag_5 + Price_hm*dlag_6 + Price_hm*dlag_7 + Price_hm*dlag_8 + Price_hm*dlag_9 + Price_hm*dlag_10 + 
-             Price_hm*D_good + Price_hm*good_dlag_1 + Price_hm*good_dlag_2 + Price_hm*good_dlag_3 +Price_hm*good_dlag_4 + Price_hm*good_dlag_5 + Price_hm*good_dlag_6 + Price_hm*good_dlag_7 + Price_hm*good_dlag_8 + Price_hm*good_dlag_9 + Price_hm*good_dlag_10 + 
-             Price_hm*D_bad + Price_hm*bad_dlag_1 + Price_hm*bad_dlag_2 + Price_hm*bad_dlag_3 +Price_hm*bad_dlag_4 + Price_hm*bad_dlag_5 + Price_hm*bad_dlag_6 + Price_hm*bad_dlag_7 + Price_hm*bad_dlag_8 + Price_hm*bad_dlag_9 + Price_hm*bad_dlag_10 +
-#tabloid               
-             tab*D + tab*dlag_1 + tab*dlag_2 + tab*dlag_3 +tab*dlag_4 + tab*dlag_5 + tab*dlag_6 + tab*dlag_7 + tab*dlag_8 + tab*dlag_9 + tab*dlag_10 + 
-             tab*D_good + tab*good_dlag_1 + tab*good_dlag_2 + tab*good_dlag_3 +tab*good_dlag_4 + tab*good_dlag_5 + tab*good_dlag_6 + tab*good_dlag_7 + tab*good_dlag_8 + tab*good_dlag_9 + tab*good_dlag_10 + 
-             tab*D_bad + tab*bad_dlag_1 + tab*bad_dlag_2 + tab*bad_dlag_3 +tab*bad_dlag_4 + tab*bad_dlag_5 + tab*bad_dlag_6 + tab*bad_dlag_7 + tab*bad_dlag_8 + tab*bad_dlag_9 + tab*bad_dlag_10  +
-#new world
-             New_world*D + New_world*dlag_1 + New_world*dlag_2 + New_world*dlag_3 +New_world*dlag_4 + New_world*dlag_5 + New_world*dlag_6 + New_world*dlag_7 + New_world*dlag_8 + New_world*dlag_9 + New_world*dlag_10 + 
-             New_world*D_good + New_world*good_dlag_1 + New_world*good_dlag_2 + New_world*good_dlag_3 +New_world*good_dlag_4 + New_world*good_dlag_5 + New_world*good_dlag_6 + New_world*good_dlag_7 + New_world*good_dlag_8 + New_world*good_dlag_9 + New_world*good_dlag_10 + 
-             New_world*D_bad + New_world*bad_dlag_1 + New_world*bad_dlag_2 + New_world*bad_dlag_3 +New_world*bad_dlag_4 + New_world*bad_dlag_5 + New_world*bad_dlag_6 + New_world*bad_dlag_7 + New_world*bad_dlag_8 + New_world*bad_dlag_9 + New_world*bad_dlag_10 +
-#advertisting               
-             D_adv*D + D_adv*dlag_1 + D_adv*dlag_2 + D_adv*dlag_3 +D_adv*dlag_4 + D_adv*dlag_5 + D_adv*dlag_6 + D_adv*dlag_7 + D_adv*dlag_8 + D_adv*dlag_9 + D_adv*dlag_10 + 
-             D_adv*D_good + D_adv*good_dlag_1 + D_adv*good_dlag_2 + D_adv*good_dlag_3 +D_adv*good_dlag_4 + D_adv*good_dlag_5 + D_adv*good_dlag_6 + D_adv*good_dlag_7 + D_adv*good_dlag_8 + D_adv*good_dlag_9 + D_adv*good_dlag_10 + 
-             D_adv*D_bad + D_adv*bad_dlag_1 + D_adv*bad_dlag_2 + D_adv*bad_dlag_3 +D_adv*bad_dlag_4 + D_adv*bad_dlag_5 + D_adv*bad_dlag_6 + D_adv*bad_dlag_7 + D_adv*bad_dlag_8 + D_adv*bad_dlag_9 + D_adv*bad_dlag_10 +
-#legal advertising          
-            ad_legal*D + ad_legal*dlag_1 + ad_legal*dlag_2 + ad_legal*dlag_3 +ad_legal*dlag_4 + ad_legal*dlag_5 + ad_legal*dlag_6 + ad_legal*dlag_7 + ad_legal*dlag_8 + ad_legal*dlag_9 + ad_legal*dlag_10 + 
-             ad_legal*D_good + ad_legal*good_dlag_1 + ad_legal*good_dlag_2 + ad_legal*good_dlag_3 +ad_legal*good_dlag_4 + ad_legal*good_dlag_5 + ad_legal*good_dlag_6 + ad_legal*good_dlag_7 + ad_legal*good_dlag_8 + ad_legal*good_dlag_9 + ad_legal*good_dlag_10 + 
-             ad_legal*D_bad + ad_legal*bad_dlag_1 + ad_legal*bad_dlag_2 + ad_legal*bad_dlag_3 +ad_legal*bad_dlag_4 + ad_legal*bad_dlag_5 + ad_legal*bad_dlag_6 + ad_legal*bad_dlag_7 + ad_legal*bad_dlag_8 + ad_legal*bad_dlag_9 + ad_legal*bad_dlag_10 +
-#New
-            New*D + New*dlag_1 + New*dlag_2 + New*dlag_3 +New*dlag_4 + New*dlag_5 + New*dlag_6 + New*dlag_7 + New*dlag_8 + New*dlag_9 + New*dlag_10 + 
-            New*D_good + New*good_dlag_1 + New*good_dlag_2 + New*good_dlag_3 +New*good_dlag_4 + New*good_dlag_5 + New*good_dlag_6 + New*good_dlag_7 + New*good_dlag_8 + New*good_dlag_9 + New*good_dlag_10 + 
-             New*D_bad + New*bad_dlag_1 + New*bad_dlag_2 + New*bad_dlag_3 +New*bad_dlag_4 + New*bad_dlag_5 + New*bad_dlag_6 + New*bad_dlag_7 + New*bad_dlag_8 + New*bad_dlag_9 + New*bad_dlag_10 +
-#Vintage
-            Vin*D + Vin*dlag_1 + Vin*dlag_2 + Vin*dlag_3 +Vin*dlag_4 + Vin*dlag_5 + Vin*dlag_6 + Vin*dlag_7 + Vin*dlag_8 + Vin*dlag_9 + Vin*dlag_10 + 
-            Vin*D_good + Vin*good_dlag_1 + Vin*good_dlag_2 + Vin*good_dlag_3 +Vin*good_dlag_4 + Vin*good_dlag_5 + Vin*good_dlag_6 + Vin*good_dlag_7 + Vin*good_dlag_8 + Vin*good_dlag_9 + Vin*good_dlag_10 + 
-             Vin*D_bad + Vin*bad_dlag_1 + Vin*bad_dlag_2 + Vin*bad_dlag_3 +Vin*bad_dlag_4 + Vin*bad_dlag_5 + Vin*bad_dlag_6 + Vin*bad_dlag_7 + Vin*bad_dlag_8 + Vin*bad_dlag_9 + Vin*bad_dlag_10 +
-#High Quality  
-            high_quality_indicator*D + high_quality_indicator*dlag_1 + high_quality_indicator*dlag_2 + high_quality_indicator*dlag_3 +high_quality_indicator*dlag_4 + high_quality_indicator*dlag_5 + high_quality_indicator*dlag_6 + high_quality_indicator*dlag_7 + high_quality_indicator*dlag_8 + high_quality_indicator*dlag_9 + high_quality_indicator*dlag_10 + 
-            high_quality_indicator*D_good + high_quality_indicator*good_dlag_1 + high_quality_indicator*good_dlag_2 + high_quality_indicator*good_dlag_3 +high_quality_indicator*good_dlag_4 + high_quality_indicator*good_dlag_5 + high_quality_indicator*good_dlag_6 + high_quality_indicator*good_dlag_7 + high_quality_indicator*good_dlag_8 + high_quality_indicator*good_dlag_9 + high_quality_indicator*good_dlag_10 + 
-             high_quality_indicator*D_bad + high_quality_indicator*bad_dlag_1 + high_quality_indicator*bad_dlag_2 + high_quality_indicator*bad_dlag_3 +high_quality_indicator*bad_dlag_4 + high_quality_indicator*bad_dlag_5 + high_quality_indicator*bad_dlag_6 + high_quality_indicator*bad_dlag_7 + high_quality_indicator*bad_dlag_8 + high_quality_indicator*bad_dlag_9 + high_quality_indicator*bad_dlag_10 
-   | i + t | 0 | brand, rev_data)
+## Simulation using `fixest::feols`
+
+```{r}
+estimator <- function(
+  reg_data = sim_data
+){
+ sim_model <- feols(Y ~ l(R, -2:4) | i + t, panel.id = ~ i + t, 
+                    cluster = ~ i, data = reg_data)
+ 
+ point_estimate <- sim_model$coefficients
+ 
+ ci <- confint(sim_model)
+ 
+ estimate <- c(point_estimate[1],ci[1,1],ci[1,2],point_estimate[2],ci[2,1],ci[2,2],point_estimate[3],ci[3,1],ci[3,2],point_estimate[4],ci[4,1],ci[4,2],point_estimate[5],ci[5,1],ci[5,2],point_estimate[6],ci[6,1],ci[6,2],point_estimate[7],ci[7,1],ci[7,2])
+ 
+ names(estimate) <- c('r_hat1','ci_lower1','ci_upper1','r_hat2','ci_lower2','ci_upper2','r_hat3','ci_lower3','ci_upper3','r_hat4','ci_lower4','ci_upper4','r_hat5','ci_lower5','ci_upper5','r_hat6','ci_lower6','ci_upper6','r_hat7','ci_lower7','ci_upper7')
+ 
+ estimate
+}
+
+estimator()
+```
+
+```{r}
+#Creating confidence intervals for each of the previous regressions
+
+par(mfrow = c(2,1))
+fit_base %>%
+  coefplot(keep = 'R[^_]|^R$', xlim = c(3,9))
+feols(Y ~ l(R, -2:4) | i + t, panel.id = ~ i + t, cluster = ~ i, data = sim_data) %>%
+  coefplot(keep = 'R[^_]|^R$')
+
+```
+
+
+
+```{r warning=FALSE, message=FALSE}
+mc_estimate <- function(s){
+  sim_data <- simulate_data()
+  
+  estimate <- estimator(reg_data = sim_data)
+  
+  estimate
+}
+
+feols_estimates <- 1:100 %>%
+  map_df(mc_estimate, .id = 'Sample')
+
+head(feols_estimates,10)
+```
+
+```{r}
+feols_estimates <- feols_estimates %>%
+    mutate(error1 = r_hat1 - r[1]) %>%
+    mutate(error2_1 = error1^2) %>%
+    mutate(in_ci1 = as.integer((ci_lower1 <= (r[1])) & ((r[1]) <= ci_upper1))) %>%
+    mutate(error2 = r_hat2 - r[2]) %>%
+    mutate(error2_2 = error2^2) %>%
+    mutate(in_ci2 = as.integer((ci_lower2 <= (r[2])) & ((r[2]) <= ci_upper2))) %>%
+    mutate(error3 = r_hat3 - r[3]) %>%
+    mutate(error2_3 = error3^2) %>%
+    mutate(in_ci3 = as.integer((ci_lower3 <= (r[3])) & ((r[3]) <= ci_upper3))) %>%
+    mutate(error4 = r_hat4 - r[4]) %>%
+    mutate(error2_4 = error4^2) %>%
+    mutate(in_ci4 = as.integer((ci_lower4 <= (r[4])) & ((r[4]) <= ci_upper4))) %>%
+    mutate(error5 = r_hat5 - r[5]) %>%
+    mutate(error2_5 = error5^2) %>%
+    mutate(in_ci5 = as.integer((ci_lower5 <= (r[5])) & ((r[5]) <= ci_upper5))) %>%
+    mutate(error6 = r_hat6 - r[6]) %>%
+    mutate(error2_6 = error6^2) %>%
+    mutate(in_ci6 = as.integer((ci_lower6 <= (r[6])) & ((r[6]) <= ci_upper6))) %>%
+    mutate(error7 = r_hat7 - r[7]) %>%
+    mutate(error2_7 = error7^2) %>%
+    mutate(in_ci7 = as.integer((ci_lower7 <= (r[7])) & ((r[7]) <= ci_upper7)))
+```
+
+
+```{r}
+
+#Generating t test for each of the errors for each lead and lag
+t_bias_lead2 <- t.test(feols_estimates$error1)
+t_bias_lead1 <- t.test(feols_estimates$error2)
+t_bias_r <- t.test(feols_estimates$error3)
+t_bias_lag1<- t.test(feols_estimates$error4)
+t_bias_lag2 <- t.test(feols_estimates$error5)
+t_bias_lag3 <- t.test(feols_estimates$error6)
+t_bias_lag4 <- t.test(feols_estimates$error7)
+
+#Generating the coverage of each lead and lag 
+t_coverage_lead2 <- t.test(feols_estimates$in_ci1,mu=0.95)
+t_coverage_lead1 <- t.test(feols_estimates$in_ci2,mu=0.95)
+t_coverage_r <- t.test(feols_estimates$in_ci3,mu=0.95)
+t_coverage_lag1 <- t.test(feols_estimates$in_ci4,mu=0.95)
+t_coverage_lag2 <- t.test(feols_estimates$in_ci5,mu=0.95)
+t_coverage_lag3 <- t.test(feols_estimates$in_ci6,mu=0.95)
+t_coverage_lag4 <- t.test(feols_estimates$in_ci7,mu=0.95)
+
+#Generating summary bias tables for each lead and lag
+test_results_lead2 <- map_df(list(t_bias_lead2,t_coverage_lead2),tidy) %>%
+  mutate(statistic = c('Bias','Coverage')) %>%
+  mutate(H_0 = c(0,0.95)) %>%
+  mutate(Instance = 'Lead2')
+
+test_results_lead1 <- map_df(list(t_bias_lead1,t_coverage_lead1),tidy) %>%
+  mutate(statistic = c('Bias','Coverage')) %>%
+  mutate(H_0 = c(0,0.95)) %>%
+  mutate(Instance = 'Lead1')
+
+test_results_r <- map_df(list(t_bias_r,t_coverage_r),tidy) %>%
+  mutate(statistic = c('Bias','Coverage')) %>%
+  mutate(H_0 = c(0,0.95)) %>%
+  mutate(Instance = 'Treatment')
+test_results_lag1 <- map_df(list(t_bias_lag1,t_coverage_lag1),tidy) %>%
+  mutate(statistic = c('Bias','Coverage')) %>%
+  mutate(H_0 = c(0,0.95)) %>%
+  mutate(Instance = 'Lag1')
+test_results_lag2 <- map_df(list(t_bias_lag2,t_coverage_lag2),tidy) %>%
+  mutate(statistic = c('Bias','Coverage')) %>%
+  mutate(H_0 = c(0,0.95)) %>%
+  mutate(Instance = 'Lag2')
+test_results_lag3 <- map_df(list(t_bias_lag3,t_coverage_lag3),tidy) %>%
+  mutate(statistic = c('Bias','Coverage')) %>%
+  mutate(H_0 = c(0,0.95)) %>%
+  mutate(Instance = 'Lag3')
+
+test_results_lag4 <- map_df(list(t_bias_lag4,t_coverage_lag4),tidy) %>%
+  mutate(statistic = c('Bias','Coverage')) %>%
+  mutate(H_0 = c(0,0.95)) %>%
+  mutate(Instance = 'Lag4')
+
+#Creating one bias summary data table for all leads and lags 
+test_results <- data.frame(rbind(test_results_lead2,test_results_lead1, test_results_r, test_results_lag1, test_results_lag2, test_results_lag3, test_results_lag4))
+knitr::kable(test_results[c('Instance','statistic','estimate','H_0','p.value','conf.low','conf.high')])
+
+
+t_coverage_lag1
 ```
 
 
